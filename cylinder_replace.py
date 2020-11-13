@@ -1,7 +1,7 @@
 import bpy
 import bmesh
 from mathutils import Matrix
-from . library import performOnSelected
+from . library import performOnSelectedIslands, fillHoles
 bops = bmesh.ops
 
 
@@ -20,44 +20,48 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         soft_max=24,
         description="Number of segments in created cylinder",)
 
+    have_caps: bpy.props.EnumProperty(
+        name='caps',
+        default='KEEP',
+        items={('REMOVE', 'Remove', 'Remove caps.'), ('KEEP', 'Keep', 'Only create caps where caps existed previously.'), ('CREATE', 'Create', 'Create new caps.')},
+        description="Whether end caps should be present or not.",)
+
     @classmethod
     def poll(cls, context):
-        return context.object.select_get() and context.object.type == "MESH"
+        return (context.object != None) and context.object.select_get() and context.object.type == "MESH"
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        performOnSelected(context, self.logic, False, {
+        performOnSelectedIslands(context, self.logic, {
                                "segments": self.segment_count})
         return {'FINISHED'}
 
-    def logic(self, bm, args):
+    def logic(self, context, bm, activeGeom, args):
         splitGeom = bops.split(
-            bm, geom=[face for face in bm.faces if face.select])["geom"]
+            bm, geom=list(activeGeom["faces"]), use_only_faces=True)["geom"]
 
-        for vert in bm.verts:
-            vert.select = False
-        for geom in splitGeom:
-            geom.select = True
-
-        info = self.extractInfo(bm)
+        activeGeom = {
+            "verts": [g for g in splitGeom if g.is_valid and isinstance(g, bmesh.types.BMVert)],
+            "edges": [g for g in splitGeom if g.is_valid and isinstance(g, bmesh.types.BMEdge)],
+            "faces": [g for g in splitGeom if g.is_valid and isinstance(g, bmesh.types.BMFace)],
+        }
+        info = self.extractInfo(bm, activeGeom)
 
         # check for validity because splitGeom will still contain the caps, which are already deleted by extractInfo
-        bops.delete(
-            bm, geom=list(g for g in splitGeom if g.is_valid), context="VERTS")
+        bops.delete(bm, geom=activeGeom["verts"], context="VERTS")
 
         self.createNewCylinder(bm, info, args["segments"])
         return True
 
-    def extractInfo(self, bm):
+    def extractInfo(self, bm, activeGeom):
         # delete existing caps
-        caps = [face for face in bm.faces if (
-            face.select and len(face.verts) != 4)]
+        caps = [face for face in activeGeom["faces"] if len(face.verts) != 4]
         bops.delete(bm, geom=caps, context="FACES_ONLY")
 
         # create new caps (yes, this is redundant, but it works and doesn't disrupt selection stuff)
-        ends = self.fillHoles(bm)['faces']
+        ends = fillHoles(bm, activeGeom["edges"])['faces']
 
         infos = []
 
@@ -124,9 +128,6 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         bops.delete(bm, geom=[end1], context="FACES_ONLY")
         bops.delete(bm, geom=[end2], context="FACES_ONLY")
 
-    def fillHoles(self, bm, selectedOnly=True):
-        return bops.contextual_create(bm, geom=[edge for edge in bm.edges if ((not selectedOnly) or edge.select) and edge.is_boundary])
-
 
 class CylinderReplacePanel(bpy.types.Panel):
     bl_idname = "panel.cylinderreplace"
@@ -139,6 +140,7 @@ class CylinderReplacePanel(bpy.types.Panel):
         layout = self.layout
 
         layout.prop(OBJECT__OT_cylinder_replace.segment_count)
+        layout.prop(OBJECT__OT_cylinder_replace.have_caps)
         props = layout.operator(OBJECT__OT_cylinder_replace.bl_idname)
 
         return {'FINISHED'}

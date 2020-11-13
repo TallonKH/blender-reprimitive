@@ -11,7 +11,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-from . cylinder_replace import OBJECT__OT_cylinder_replace
+
+if "bpy" in locals(): #means Blender already started once
+    import importlib
+    print("reload")
+    importlib.reload(cylinder_replace)
+else: #start up
+    from . cylinder_replace import OBJECT__OT_cylinder_replace
 
 import bpy
 
@@ -20,7 +26,7 @@ bl_info = {
     "author": "TallonKH",
     "description": "Replaces existing primitives with new ones.",
     "blender": (2, 80, 0),
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "location": "View3D > Object",
     "warning": "",
     "category": "Object"
