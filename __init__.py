@@ -16,9 +16,9 @@ from . cylinder_replace import OBJECT__OT_cylinder_replace
 import bpy
 
 bl_info = {
-    "name": "Cyldrop",
+    "name": "Reprimitive",
     "author": "TallonKH",
-    "description": "Replaces existing cylinders with ones of specified segment count.",
+    "description": "Replaces existing primitives with new ones.",
     "blender": (2, 80, 0),
     "version": (1, 0, 0),
     "location": "View3D > Object",

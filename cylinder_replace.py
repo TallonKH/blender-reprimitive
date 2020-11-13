@@ -1,12 +1,9 @@
 import bpy
 import bmesh
 from mathutils import Matrix
-
+from . library import performOnSelected
 bops = bmesh.ops
 
-
-# class CylinderReplaceProperties(bpy.types.PropertyGroup):
-#     pass
 
 class OBJECT__OT_cylinder_replace(bpy.types.Operator):
     bl_idname = "object.cylinderreplace"
@@ -31,7 +28,7 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        self.performOnSelected(context, self.logic, False, {
+        performOnSelected(context, self.logic, False, {
                                "segments": self.segment_count})
         return {'FINISHED'}
 
@@ -130,41 +127,11 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
     def fillHoles(self, bm, selectedOnly=True):
         return bops.contextual_create(bm, geom=[edge for edge in bm.edges if ((not selectedOnly) or edge.select) and edge.is_boundary])
 
-    def performOnSelected(self, context, logic, discardChanges, args):
-        print("run")
-        mode = context.object.mode
-
-        bm = None
-        if(mode == 'EDIT'):
-            ob = context.edit_object
-            me = ob.data
-            bm = bmesh.from_edit_mesh(me)
-            success = logic(bm, args)
-            if(success and (not discardChanges)):
-                bmesh.update_edit_mesh(me)
-        elif(mode == 'OBJECT'):
-            for ob in context.selected_objects:
-                me = ob.data
-                bm = bmesh.new()
-                bm.from_mesh(me)
-
-                for vert in bm.verts:
-                    vert.select = True
-                for edge in bm.edges:
-                    edge.select = True
-                for face in bm.faces:
-                    face.select = True
-                success = logic(bm, args)
-                if(success and (not discardChanges)):
-                    bm.to_mesh(me)
-                    me.update()
-                bm.free()
-
 
 class CylinderReplacePanel(bpy.types.Panel):
     bl_idname = "panel.cylinderreplace"
     bl_label = "Cylinder Replace"
-    bl_category = "Cyldrop"
+    bl_category = "Reprimitive"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
 
