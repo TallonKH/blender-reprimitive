@@ -23,7 +23,8 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
     have_caps: bpy.props.EnumProperty(
         name='caps',
         default='KEEP',
-        items={('REMOVE', 'Remove', 'Remove caps.'), ('KEEP', 'Keep', 'Only create caps where caps existed previously.'), ('CREATE', 'Create', 'Create new caps.')},
+        items={('REMOVE', 'Remove', 'No caps.'), ('KEEP', 'Keep',
+                                                  'Only create caps where caps existed previously.'), ('HAVE', 'Have', 'Create caps on both ends.')},
         description="Whether end caps should be present or not.",)
 
     @classmethod
@@ -35,7 +36,9 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
 
     def execute(self, context):
         performOnSelectedIslands(context, self.logic, {
-                               "segments": self.segment_count})
+            "segments": self.segment_count,
+            "caps": self.have_caps,
+        })
         return {'FINISHED'}
 
     def logic(self, context, bm, activeGeom, args):
@@ -52,12 +55,21 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         # check for validity because splitGeom will still contain the caps, which are already deleted by extractInfo
         bops.delete(bm, geom=activeGeom["verts"], context="VERTS")
 
-        self.createNewCylinder(bm, info, args["segments"])
+        self.createNewCylinder(bm, info, args["segments"], args["caps"])
         return True
 
     def extractInfo(self, bm, activeGeom):
-        # delete existing caps
+        # delete existing caps (and keep track of where they are)
         caps = [face for face in activeGeom["faces"] if len(face.verts) != 4]
+
+        existingCap = None
+        if len(caps) == 0:
+            existingCap = "neither"
+        elif len(caps) == 2:
+            existingCap = "both"
+        else:
+            existingCap = caps[0].calc_center_median()
+
         bops.delete(bm, geom=caps, context="FACES_ONLY")
 
         # create new caps (yes, this is redundant, but it works and doesn't disrupt selection stuff)
@@ -69,6 +81,11 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         for end in ends:
             normal = end.normal
             center = end.calc_center_median()
+
+            cap = False
+            if(existingCap != "neither"):
+                cap = (existingCap == "both") or (
+                    (center - existingCap).length < 0.00001)
 
             minRadius = (center - end.verts[0].co).length
             maxRadius = minRadius
@@ -91,13 +108,14 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
                 "minRadius": minRadius,
                 "maxRadius": maxRadius,
                 "avgRadius": radSum/count,
+                "cap": cap,
             })
 
         bops.delete(bm, geom=ends, context="FACES_ONLY")
 
         return infos
 
-    def createNewCylinder(self, bm, infos, segments):
+    def createNewCylinder(self, bm, infos, segments, capping):
         if(len(infos) != 2):
             raise ValueError(
                 "Cylinder not found! Are there exactly 2 faces with 3 or more than 4 faces?")
@@ -125,8 +143,11 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         end1 = verts1[0].link_faces[0]
         end2 = verts2[0].link_faces[0]
         bops.bridge_loops(bm, edges=list(end1.edges)+list(end2.edges))
-        bops.delete(bm, geom=[end1], context="FACES_ONLY")
-        bops.delete(bm, geom=[end2], context="FACES_ONLY")
+        if(capping != "HAVE"):
+            if(capping == "REMOVE" or (not inf1["cap"])):
+                bops.delete(bm, geom=[end1], context="FACES_ONLY")
+            if(capping == "REMOVE" or (not inf2["cap"])):
+                bops.delete(bm, geom=[end2], context="FACES_ONLY")
 
 
 class CylinderReplacePanel(bpy.types.Panel):
