@@ -22,9 +22,9 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
 
     have_caps: bpy.props.EnumProperty(
         name='caps',
-        default='KEEP',
-        items={('REMOVE', 'Remove', 'No caps.'), ('KEEP', 'Keep',
-                                                  'Only create caps where caps existed previously.'), ('HAVE', 'Have', 'Create caps on both ends.')},
+        default='PRESERVE',
+        items={('NEITHER', 'Neither', 'No caps.'), ('PRESERVE', 'Preserve',
+                                                  'Only create caps where caps existed previously.'), ('BOTH', 'Both', 'Create caps on both ends.')},
         description="Whether end caps should be present or not.",)
 
     @classmethod
@@ -143,10 +143,10 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         end1 = verts1[0].link_faces[0]
         end2 = verts2[0].link_faces[0]
         bops.bridge_loops(bm, edges=list(end1.edges)+list(end2.edges))
-        if(capping != "HAVE"):
-            if(capping == "REMOVE" or (not inf1["cap"])):
+        if(capping != "BOTH"):
+            if(capping == "NEITHER" or (not inf1["cap"])):
                 bops.delete(bm, geom=[end1], context="FACES_ONLY")
-            if(capping == "REMOVE" or (not inf2["cap"])):
+            if(capping == "NEITHER" or (not inf2["cap"])):
                 bops.delete(bm, geom=[end2], context="FACES_ONLY")
 
 
