@@ -71,7 +71,6 @@ def performOnIslands(context, bm, activeGeom, logic, args):
             "edges": edgesFromVerts(island),
             "faces": facesFromVerts(island),
         }
-        print(str(len(islandGeom["faces"])) + " faces in island")
         success = logic(context, bm, islandGeom, args)
         if(not success):
             return False
@@ -116,3 +115,7 @@ def get_islands(bm, verts=[]):  # https://blender.stackexchange.com/a/105142
 
 def fillHoles(bm, consideredEdges):
     return bops.contextual_create(bm, geom=[edge for edge in consideredEdges if edge.is_boundary])
+
+# normal must be normalized
+def projectOntoNormal(vec, normal):
+    return vec - vec.project(normal)

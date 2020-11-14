@@ -26,7 +26,7 @@ bl_info = {
     "author": "TallonKH",
     "description": "Replaces existing primitives with new ones.",
     "blender": (2, 80, 0),
-    "version": (1, 0, 1),
+    "version": (1, 1, 0),
     "location": "View3D > Object",
     "warning": "",
     "category": "Object"

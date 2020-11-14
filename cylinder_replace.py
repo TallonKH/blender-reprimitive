@@ -1,7 +1,7 @@
 import bpy
 import bmesh
 from mathutils import Matrix
-from . library import performOnSelectedIslands, fillHoles
+from . library import performOnSelectedIslands, fillHoles, projectOntoNormal
 bops = bmesh.ops
 
 
@@ -14,18 +14,28 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     segment_count: bpy.props.IntProperty(
-        name='segments',
-        default=8,
+        name='Segment Count',
+        default=12,
         min=3,
-        soft_max=24,
-        description="Number of segments in created cylinder",)
+        soft_max=32,
+        description="Number of segments in created cylinder.",)
 
     have_caps: bpy.props.EnumProperty(
-        name='caps',
+        name='End Cap Generation',
         default='PRESERVE',
         items={('NEITHER', 'Neither', 'No caps.'), ('PRESERVE', 'Preserve',
-                                                  'Only create caps where caps existed previously.'), ('BOTH', 'Both', 'Create caps on both ends.')},
+                                                    'Only create caps where caps existed previously.'), ('BOTH', 'Both', 'Create caps on both ends.')},
         description="Whether end caps should be present or not.",)
+
+    planar_spin: bpy.props.BoolProperty(
+        name='Planar Spin',
+        default=True,
+        description="Adjust the spin of the faces to reduce non-planar faces.",)
+
+    use_smooth_shading: bpy.props.BoolProperty(
+        name='Smooth Shading',
+        default=True,
+        description="Render smooth.",)
 
     @classmethod
     def poll(cls, context):
@@ -36,8 +46,10 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
 
     def execute(self, context):
         performOnSelectedIslands(context, self.logic, {
-            "segments": self.segment_count,
-            "caps": self.have_caps,
+            "segment_count": self.segment_count,
+            "have_caps": self.have_caps,
+            "planar_spin": self.planar_spin,
+            "use_smooth_shading": self.use_smooth_shading,
         })
         return {'FINISHED'}
 
@@ -55,7 +67,7 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         # check for validity because splitGeom will still contain the caps, which are already deleted by extractInfo
         bops.delete(bm, geom=activeGeom["verts"], context="VERTS")
 
-        self.createNewCylinder(bm, info, args["segments"], args["caps"])
+        self.createNewCylinder(bm, info, args)
         return True
 
     def extractInfo(self, bm, activeGeom):
@@ -79,7 +91,6 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
 
         # there are only ever 2 ends to iterate through
         for end in ends:
-            normal = end.normal
             center = end.calc_center_median()
 
             cap = False
@@ -101,53 +112,73 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
 
                 if(rad > maxRadius):
                     maxRadius = rad
+
+            normal = end.normal
             infos.append({
-                "center": center,
-                "normal": normal,
+                "center": center.copy(),
+                "normal": normal.copy(),
                 "rotation": normal.to_track_quat(),
                 "minRadius": minRadius,
                 "maxRadius": maxRadius,
                 "avgRadius": radSum/count,
-                "cap": cap,
+                "has_cap": cap,
             })
 
         bops.delete(bm, geom=ends, context="FACES_ONLY")
 
         return infos
 
-    def createNewCylinder(self, bm, infos, segments, capping):
+    def createNewCylinder(self, bm, infos, args):
         if(len(infos) != 2):
             raise ValueError(
                 "Cylinder not found! Are there exactly 2 faces with 3 or more than 4 faces?")
 
-        inf1 = infos[0]
-        inf2 = infos[1]
+        segments = args["segment_count"]
 
-        circ1 = bops.create_circle(bm,
-                                   cap_ends=True,
-                                   segments=segments,
-                                   radius=inf1["avgRadius"])
-        circ2 = bops.create_circle(bm,
-                                   cap_ends=True,
-                                   segments=segments,
-                                   radius=inf2["avgRadius"])
+        edges = []
+        for info in infos:
+            end_circ = bops.create_circle(bm,
+                                          cap_ends=True,
+                                          segments=segments,
+                                          radius=info["avgRadius"])
 
-        verts1 = circ1["verts"]
-        verts2 = circ2["verts"]
-        bops.translate(bm, verts=verts1, vec=inf1["center"])
-        bops.translate(bm, verts=verts2, vec=inf2["center"])
-        bops.rotate(bm, verts=verts1,
-                    cent=inf1["center"], matrix=inf1["rotation"].to_matrix())
-        bops.rotate(bm, verts=verts2,
-                    cent=inf2["center"], matrix=inf2["rotation"].to_matrix())
-        end1 = verts1[0].link_faces[0]
-        end2 = verts2[0].link_faces[0]
-        bops.bridge_loops(bm, edges=list(end1.edges)+list(end2.edges))
-        if(capping != "BOTH"):
-            if(capping == "NEITHER" or (not inf1["cap"])):
-                bops.delete(bm, geom=[end1], context="FACES_ONLY")
-            if(capping == "NEITHER" or (not inf2["cap"])):
-                bops.delete(bm, geom=[end2], context="FACES_ONLY")
+            end_verts = end_circ["verts"]
+            end_center = info["center"]
+            bops.translate(bm, verts=end_verts, vec=end_center)
+            bops.rotate(bm, verts=end_verts, cent=end_center,
+                        matrix=info["rotation"].to_matrix())
+
+            endFace = end_verts[0].link_faces[0]
+            edges.extend(endFace.edges)
+            info["face"] = endFace
+
+        if(args["planar_spin"]):
+            inf0 = infos[0]
+            direction0 = inf0["face"].verts[0].co - inf0["center"]
+
+            inf1 = infos[1]
+            face1 = inf1["face"]
+            direction1 = face1.verts[0].co - inf1["center"]
+            norm1 = inf1["normal"].normalized()
+            projDir = projectOntoNormal(direction0, norm1)
+            angle = projDir.angle(direction1, 0)
+            bops.rotate(bm, verts=face1.verts, cent=inf1["center"], matrix=Matrix.Rotation(
+                angle, 4, norm1))
+
+        bridges = bops.bridge_loops(bm, edges=edges)
+        smooth = args["use_smooth_shading"]
+        for face in bridges["faces"]:
+            face.smooth = smooth
+
+        capping = args["have_caps"]
+        if(capping == "NEITHER"):
+            bops.delete(bm, geom=[info["face"]
+                                  for info in infos], context="FACES_ONLY")
+        elif(capping == "PRESERVE"):
+            bops.delete(bm, geom=[info["face"] for info in infos if (
+                not info["has_cap"])], context="FACES_ONLY")
+        elif(capping == "BOTH"):
+            pass
 
 
 class CylinderReplacePanel(bpy.types.Panel):
@@ -162,6 +193,8 @@ class CylinderReplacePanel(bpy.types.Panel):
 
         layout.prop(OBJECT__OT_cylinder_replace.segment_count)
         layout.prop(OBJECT__OT_cylinder_replace.have_caps)
+        layout.prop(OBJECT__OT_cylinder_replace.planar_spin)
+        layout.prop(OBJECT__OT_cylinder_replace.use_smooth_shading)
         props = layout.operator(OBJECT__OT_cylinder_replace.bl_idname)
 
         return {'FINISHED'}
