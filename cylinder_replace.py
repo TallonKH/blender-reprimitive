@@ -62,7 +62,7 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
             "edges": [g for g in splitGeom if g.is_valid and isinstance(g, bmesh.types.BMEdge)],
             "faces": [g for g in splitGeom if g.is_valid and isinstance(g, bmesh.types.BMFace)],
         }
-        info = self.extractInfo(bm, activeGeom)
+        info = self.extractEndsInfo(bm, activeGeom)
 
         # check for validity because splitGeom will still contain the caps, which are already deleted by extractInfo
         bops.delete(bm, geom=activeGeom["verts"], context="VERTS")
@@ -70,7 +70,8 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         self.createNewCylinder(bm, info, args)
         return True
 
-    def extractInfo(self, bm, activeGeom):
+    # an `end` is the `top/bottom` of a cylinder, capped or empty
+    def extractEndsInfo(self, bm, activeGeom):
         # delete existing caps (and keep track of where they are)
         caps = [face for face in activeGeom["faces"] if len(face.verts) != 4]
 
@@ -87,7 +88,7 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
         # create new caps (yes, this is redundant, but it works and doesn't disrupt selection stuff)
         ends = fillHoles(bm, activeGeom["edges"])['faces']
 
-        infos = []
+        endInfos = []
 
         # there are only ever 2 ends to iterate through
         for end in ends:
@@ -114,7 +115,7 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
                     maxRadius = rad
 
             normal = end.normal
-            infos.append({
+            endInfos.append({
                 "center": center.copy(),
                 "normal": normal.copy(),
                 "rotation": normal.to_track_quat(),
@@ -126,7 +127,7 @@ class OBJECT__OT_cylinder_replace(bpy.types.Operator):
 
         bops.delete(bm, geom=ends, context="FACES_ONLY")
 
-        return infos
+        return endInfos
 
     def createNewCylinder(self, bm, infos, args):
         if(len(infos) != 2):

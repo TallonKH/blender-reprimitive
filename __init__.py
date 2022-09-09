@@ -15,7 +15,7 @@
 if "bpy" in locals(): #means Blender already started once
     import importlib
     print("reload")
-    importlib.reload(cylinder_replace)
+    importlib.reload("./cylinder_replace")
 else: #start up
     from . cylinder_replace import OBJECT__OT_cylinder_replace
 
@@ -25,7 +25,7 @@ bl_info = {
     "name": "Reprimitive",
     "author": "TallonKH",
     "description": "Replaces existing primitives with new ones.",
-    "blender": (2, 80, 0),
+    "blender": (2, 91, 0),
     "version": (1, 1, 0),
     "location": "View3D > Object",
     "warning": "",
